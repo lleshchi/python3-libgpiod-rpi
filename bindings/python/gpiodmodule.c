@@ -434,6 +434,24 @@ static PyObject *gpiod_Line_request(gpiod_LineObject *self,
 	gpiod_LineBulkObject *bulk_obj;
 	int rv;
 
+	static char * kwlist[] = {
+		"consumer",
+		"type",
+		"flags",
+		"default_val",
+		NULL } ;
+
+	/* fprintf(stderr, "%ld dict size\n", PyDict_Size(kwds)) ; */
+	if (PyDict_Size(kwds) < 0) {
+		PyErr_SetString(PyExc_TypeError, "This function requires arguments") ;
+		return NULL ;
+		}
+
+	/* if (! PyArg_ParseTupleAndKeywords(args, kwargs, ) { */
+	/* 	PyErr_SetString(PyExc_TypeError, "This function requires arguments") ; */
+	/* 	return NULL ; */
+	/* } */
+
 	def_val = PyDict_GetItemString(kwds, "default_val");
 	def_vals = PyDict_GetItemString(kwds, "default_vals");
 
