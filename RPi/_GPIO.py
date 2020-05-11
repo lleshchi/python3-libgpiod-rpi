@@ -15,9 +15,8 @@ from threading import Thread, Event
 
 # TODO Some weirdness with the timing of callbacks (might be due to testing hardware)
 
-# === User Facing Data ===
 
-
+# BCM to Board mode conversion table
 pin_to_gpio_rev3 = [
                     -1, -1, -1,  2, -1, 3,  -1,  4, 14, -1,     # NOQA
                     15, 17, 18, 27, -1, 22, 23, -1, 24, 10,     # NOQA
@@ -25,7 +24,9 @@ pin_to_gpio_rev3 = [
                     -1,  6, 12, 13, -1, 19, 16, 26, 20, -1, 21  # NOQA
                    ]
 
-# Pin numbering modes
+# === User Facing Data ===
+
+# [API] Pin numbering modes
 UNKNOWN = 0
 BCM     = 1
 BOARD   = 2
@@ -87,16 +88,28 @@ _LINE_DIRECTION_CONST_TO_FLAG = {
 def dir_flag(const):
     return _LINE_DIRECTION_CONST_TO_FLAG[const]
 
+# internal line modes
 
-# Request types
-FALLING     = gpiod.LINE_REQ_EV_FALLING_EDGE
-RISING      = gpiod.LINE_REQ_EV_RISING_EDGE
-BOTH        = gpiod.LINE_REQ_EV_BOTH_EDGES
-AS_IS       = gpiod.LINE_REQ_DIR_AS_IS
+_line_mode_none     = 0
+_line_mode_in       = gpiod.LINE_REQ_DIR_IN
+_line_mode_out      = gpiod.LINE_REQ_DIR_OUT
+_line_mode_falling  = gpiod.LINE_REQ_EV_FALLING_EDGE
+_line_mode_rising   = gpiod.LINE_REQ_EV_RISING_EDGE
+_line_mode_both     = gpiod.LINE_REQ_EV_BOTH_EDGES
+_line_mode_as_is    = gpiod.LINE_REQ_DIR_AS_IS
+
+# [API] Data direction types
+IN  = _line_mode_in
+OUT = _line_mode_out
+
+# [API] Request types
+FALLING     = _line_mode_falling
+RISING      = _line_mode_rising
+BOTH        = _line_mode_both
+AS_IS       = _line_mode_as_is
 
 
 # === Internal Data ===
-
 
 # Internal library state
 class _State:
@@ -106,9 +119,11 @@ class _State:
     chip       = None
     event_ls   = []
     lines      = {}
+    line_modes = {}
     threads    = {}
     callbacks  = {}
     killsigs   = {}
+    deathsigs  = {}
     timestamps = {}
 
 
@@ -145,6 +160,7 @@ def Reset():
     _State.chip       = None
     _State.event_ls   = []
     _State.lines      = {}
+    _State.line_modes = {}
     _State.threads    = {}
     _State.callbacks  = {}
     _State.killsigs   = {}
@@ -271,13 +287,42 @@ def chip_close_if_open():
         Dprint("NO-OP call to Chip object close()")
 
 
+def line_set_mode(channel, mode, flags=0):
+    if line_get_mode(channel) != _line_mode_none or mode == _line_mode_none:
+
+        if channel in list(_State.killsigs.keys()):
+            cleanup_poll_thread(channel)
+
+        if channel in _State.lines.keys():
+            _State.lines[channel].release()
+            del _State.lines[channel]
+
+        # We don't want to affect bouncetime handling if channel is used again
+        if channel in _State.timestamps.keys():
+            del _State.timestamps[channel]
+
+    if  mode != _line_mode_none:
+        if channel not in _State.lines.keys():
+            _State.lines[channel] = _State.chip.get_line(channel)
+        _State.lines[channel].request(consumer=str(_State.chip.name()) + str(channel), type=mode, flags=flags)
+
+    _State.line_modes[channel] = mode
+
+
+def line_get_mode(channel):
+    if channel not in _State.line_modes.keys():
+        return _line_mode_none
+    else:
+        return _State.line_modes[channel]
+
+
 # === Interface Functions ===
 
 
 def setmode(mode):
     """
     Set up numbering mode to use for channels.
-        BOARD - Use Raspberry Pi board numbers [unsupported]
+        BOARD - Use Raspberry Pi board numbers
         BCM   - Use Broadcom GPIO 00..nn numbers
     """
     if _State.mode != UNKNOWN:
@@ -345,9 +390,8 @@ def setup(channel, direction, pull_up_down=PUD_OFF, initial=None):
     direction = dir_flag(direction)
 
     for pin in channel:
-        _State.lines[pin] = _State.chip.get_line(pin)
         try:
-            _State.lines[pin].request(consumer=_State.chip.name(), type=direction, flags=request_flags)
+            line_set_mode(pin, direction)
             if initial is not None:
                 _State.lines[pin].set_value(initial)
         except OSError:
@@ -532,8 +576,6 @@ def wait_for_edge(channel, edge, bouncetime=None, timeout=0):
     # this by not requiring it, though to maintain the same semantics as RPi.GPIO, we attempt
     # to release the channel's handle as a an input value, and acquire a new handle for an
     # event value.
-    if channel not in _State.lines.keys():
-        _State.lines[channel] = _State.chip.get_line(channel)
 
     if edge != RISING and edge != FALLING and edge != BOTH:
         raise ValueError("The edge must be set to RISING, FALLING or BOTH")
@@ -544,11 +586,9 @@ def wait_for_edge(channel, edge, bouncetime=None, timeout=0):
     if timeout and timeout < 0:
         raise ValueError("Timeout must be greater than or equal to 0")  # error semantics differ from RPi.GPIO
 
-    if _State.lines[channel].is_used() and channel not in _State.lines.keys():
+    line_set_mode(channel, edge)
+    if channel not in _State.lines.keys() and _State.lines[channel].is_used():
         raise RuntimeError("Channel is currently in use (Device or Resource Busy)")
-
-    if not _State.lines[channel].is_used():
-        _State.lines[channel].request(consumer="GPIO666", type=edge)
 
     # Split up timeout into appropriate parts
     timeout_sec     = int(int(timeout) / 1000)
@@ -581,9 +621,13 @@ def poll_thread(channel, edge, callback, bouncetime):
     channel = channel_fix_and_validate(channel)
 
     while not _State.killsigs[channel].is_set():
+        print("wub")
         if wait_for_edge(channel, edge, bouncetime, 10):
             for callback_func in _State.callbacks[channel]:
                 callback_func(channel)
+
+    # We are now dead
+    _State.deathsigs[channel].set()
 
 
 def add_event_detect(channel, edge, callback=None, bouncetime=None):
@@ -611,13 +655,19 @@ def add_event_detect(channel, edge, callback=None, bouncetime=None):
     if bouncetime and bouncetime <= 0:
         raise ValueError("Bouncetime must be greater than 0")
 
+    # Start a thread that polls for events on the pin and create a list of event callbacks
     _State.threads[channel] = Thread(target=poll_thread, args=(channel, edge, callback, bouncetime))
     _State.callbacks[channel] = []
 
     if callback:
         _State.callbacks[channel].append(callback)
 
+    # Create an event to allow us to signal that the thread should terminate
     _State.killsigs[channel] = Event()
+    # Also create one to signal when it has terminated
+    _State.deathsigs[channel] = Event()
+
+    # Start the edge detection thread
     _State.threads[channel].start()
 
 
@@ -680,27 +730,9 @@ def cleanup_poll_thread(channel):
     del _State.killsigs[channel]
     del _State.callbacks[channel]
 
-
-def cleanup_all_poll_threads():
-    masterkeys = list(_State.killsigs.keys())
-    for channel in masterkeys:
-        cleanup_poll_thread(channel)
-
-
-def cleanup_line(channel):
-    _State.lines[channel].release()
-    del _State.lines[channel]
-    # We don't want to affect bouncetime handling if channel is used again
-    if channel in _State.timestamps.keys():
-        del _State.timestamps[channel]
-
-
-def cleanup_all_lines():
-    # We must copy the keylist because the dict will change size during iteration
-    masterkeys = list(_State.lines.keys())
-    for channel in masterkeys:
-        cleanup_line(channel)
-
+    while not _State.deathsigs[channel].is_set():
+        continue
+    del _State.deathsigs[channel]
 
 def cleanup():
     """
@@ -712,8 +744,10 @@ def cleanup():
         as well as close any open file descriptors
     """
 
-    cleanup_all_poll_threads()
-    cleanup_all_lines()
+    # We must copy the keylist because the dict will change size during iteration
+    masterkeys = list(_State.lines.keys())
+    for channel in masterkeys:
+        line_set_mode(channel, _line_mode_none)
     chip_close_if_open()
 
 
