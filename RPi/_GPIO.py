@@ -88,8 +88,8 @@ _LINE_DIRECTION_CONST_TO_FLAG = {
 def dir_flag(const):
     return _LINE_DIRECTION_CONST_TO_FLAG[const]
 
-# internal line modes
 
+# internal line modes
 _line_mode_none     = 0
 _line_mode_in       = gpiod.LINE_REQ_DIR_IN
 _line_mode_out      = gpiod.LINE_REQ_DIR_OUT
@@ -301,7 +301,7 @@ def line_set_mode(channel, mode, flags=0):
         if channel in _State.timestamps.keys():
             del _State.timestamps[channel]
 
-    if  mode != _line_mode_none:
+    if mode != _line_mode_none:
         if channel not in _State.lines.keys():
             _State.lines[channel] = _State.chip.get_line(channel)
         _State.lines[channel].request(consumer=str(_State.chip.name()) + str(channel), type=mode, flags=flags)
@@ -733,6 +733,7 @@ def cleanup_poll_thread(channel):
     while not _State.deathsigs[channel].is_set():
         continue
     del _State.deathsigs[channel]
+
 
 def cleanup():
     """
