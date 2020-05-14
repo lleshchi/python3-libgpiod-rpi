@@ -308,6 +308,7 @@ def line_set_mode(channel, mode, flags=0):
         _State.lines[channel].request(consumer=str(_State.chip.name()) + str(channel), type=mode, flags=flags)
 
     _State.line_modes[channel] = mode
+    Dprint("channel", channel, " line mode set to", mode)
 
 
 def line_get_mode(channel):
@@ -516,10 +517,9 @@ def setdirection(channel, direction):
     current = getdirection(channel)
     if current != -1:
         if current == IN and direction == OUT:
-            _State.lines[channel].set_direction_output()
-            #line_set_mode(channel, _line_mode_out)
+            line_set_mode(channel, _line_mode_out)
         elif current == OUT and direction == IN:
-            _State.lines[channel].set_direction_input()
+            line_set_mode(channel, _line_mode_in)
 
 
 def getactive_state(channel):
@@ -636,7 +636,6 @@ def poll_thread(channel, edge, callback, bouncetime):
     channel = channel_fix_and_validate(channel)
 
     while not _State.killsigs[channel].is_set():
-        #print("wub")
         if wait_for_edge(channel, edge, bouncetime, 10):
             for callback_func in _State.callbacks[channel]:
                 callback_func(channel)
