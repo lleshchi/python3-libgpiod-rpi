@@ -163,7 +163,6 @@ def test_setup():
     assert all([pin in GPIO_DEVEL.State_Access().lines.keys() for pin in [2,3,4]])
 
 
-
 def test_output():
     GPIO_DEVEL.Reset()
     GPIO.setmode(GPIO.BCM)
@@ -295,24 +294,24 @@ def test_add_event_detect():
     GPIO.add_event_detect(17, GPIO.FALLING, bouncetime=1)
     GPIO_DEVEL.Reset()
 
-def test_add_event_detect_edge_conditions():
-    GPIO_DEVEL.Reset()
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setup(21, GPIO.IN, GPIO.PUD_OFF)
-    # GPIO.add_event_detect(21, GPIO.RISING, foo, 1)
+# def test_add_event_detect_edge_conditions():
+#     GPIO_DEVEL.Reset()
+#     GPIO.setmode(GPIO.BCM)
+#     GPIO.setup(21, GPIO.IN, GPIO.PUD_OFF)
+#     # GPIO.add_event_detect(21, GPIO.RISING, foo, 1)
 
-    GPIO_DEVEL.Reset()
-    GPIO.setmode(GPIO.BCM)
-    GPIO.add_event_detect(21, GPIO.RISING, foo, 1)
-    GPIO.add_event_detect(21, GPIO.RISING, foo, 1)
+#     GPIO_DEVEL.Reset()
+#     GPIO.setmode(GPIO.BCM)
+#     GPIO.add_event_detect(21, GPIO.RISING, foo, 1)
+#     GPIO.add_event_detect(21, GPIO.RISING, foo, 1)
 
-    GPIO.setup(21, GPIO.IN, GPIO.PUD_OFF)
-    GPIO.setup(21, GPIO.IN, GPIO.PUD_OFF)
-    GPIO.setup(21, GPIO.OUT, GPIO.PUD_OFF)
+#     GPIO.setup(21, GPIO.IN, GPIO.PUD_OFF)
+#     GPIO.setup(21, GPIO.IN, GPIO.PUD_OFF)
+#     GPIO.setup(21, GPIO.OUT, GPIO.PUD_OFF)
 
-    GPIO.add_event_detect(21, GPIO.RISING, foo, 1)
+#     GPIO.add_event_detect(21, GPIO.RISING, foo, 1)
 
-    GPIO.setup(21, GPIO.OUT, GPIO.PUD_OFF)
+#     GPIO.setup(21, GPIO.OUT, GPIO.PUD_OFF)
 
 def test_add_event_callback():
     GPIO_DEVEL.Reset()

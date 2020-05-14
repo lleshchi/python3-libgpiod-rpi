@@ -71,24 +71,6 @@ def bias_flag(const):
     return _LINE_BIAS_CONST_TO_FLAG[const]
 
 
-# Data directions are line object direction states
-IN  = gpiod.Line.DIRECTION_INPUT
-OUT = gpiod.Line.DIRECTION_OUTPUT
-
-# libgpiod has distinct flag values for each line direction constant returned
-# by the gpiod.Line.direction () method. To simplify our translation, we map
-# the latter to the former with the following dictionary
-_LINE_DIRECTION_CONST_TO_FLAG = {
-    IN: gpiod.LINE_REQ_DIR_IN,
-    OUT: gpiod.LINE_REQ_DIR_OUT,
-}
-
-
-# Macro
-def dir_flag(const):
-    return _LINE_DIRECTION_CONST_TO_FLAG[const]
-
-
 # internal line modes
 _line_mode_none     = 0
 _line_mode_in       = gpiod.LINE_REQ_DIR_IN
@@ -96,17 +78,38 @@ _line_mode_out      = gpiod.LINE_REQ_DIR_OUT
 _line_mode_falling  = gpiod.LINE_REQ_EV_FALLING_EDGE
 _line_mode_rising   = gpiod.LINE_REQ_EV_RISING_EDGE
 _line_mode_both     = gpiod.LINE_REQ_EV_BOTH_EDGES
+# As of yet unused and unexposed
+# TODO investigate AS_IS kernel behavior
 _line_mode_as_is    = gpiod.LINE_REQ_DIR_AS_IS
 
-# [API] Data direction types
-IN  = _line_mode_in
-OUT = _line_mode_out
 
 # [API] Request types
 FALLING     = _line_mode_falling
 RISING      = _line_mode_rising
 BOTH        = _line_mode_both
-AS_IS       = _line_mode_as_is
+# As of yet unused and unexposed
+#AS_IS       = _line_mode_as_is
+
+# NOTE: libgpiod also exposes enumerated direction constants seperate from the
+# request constants, but the distinction is not relevant for our use case
+
+# [API] Data direction types
+IN  = _line_mode_in
+OUT = _line_mode_out
+
+
+# We map internal line modes to RPI.GPIO API direction constants for getdirection()
+_LINE_MODE_TO_DIR_CONST = {
+        _line_mode_none:    -1,
+        _line_mode_in:      IN ,
+        _line_mode_out:     OUT,
+        _line_mode_falling: IN,
+        _line_mode_rising:  IN,
+        _line_mode_both:    IN,
+        # This mode is not used by any functionality and so an appearance of this value
+        # signals something gone wrong in the library
+        _line_mode_as_is:   -662,
+}
 
 
 # === Internal Data ===
@@ -127,13 +130,7 @@ class _State:
     timestamps = {}
 
 
-# Internal libgpiod constants
-_OUTPUT = gpiod.Line.DIRECTION_OUTPUT
-_INPUT = gpiod.Line.DIRECTION_INPUT
-
-
 # === Helper Routines ===
-
 
 def Dprint(*msgargs):
     """ Print debug information for development purposes"""
@@ -288,6 +285,10 @@ def chip_close_if_open():
 
 
 def line_set_mode(channel, mode, flags=0):
+    if mode == line_get_mode(channel):
+        return
+
+    chip_init_if_needed()
     if line_get_mode(channel) != _line_mode_none or mode == _line_mode_none:
 
         if channel in list(_State.killsigs.keys()):
@@ -387,11 +388,9 @@ def setup(channel, direction, pull_up_down=PUD_OFF, initial=None):
     request_flags = 0
     request_flags |= bias_flag(pull_up_down)
 
-    direction = dir_flag(direction)
-
     for pin in channel:
         try:
-            line_set_mode(pin, direction)
+            line_set_mode(pin, direction, request_flags)
             if initial is not None:
                 _State.lines[pin].set_value(initial)
         except OSError:
@@ -427,7 +426,7 @@ def output(channel, value):
         raise RuntimeError("Number of channel != number of value")
 
     for chan, val in zip(channel, value):
-        if chan not in _State.lines.keys() or _State.lines[chan].direction() != _OUTPUT:
+        if line_get_mode(chan) != _line_mode_out:
             warn("The GPIO channel has not been set up as an OUTPUT\n\tSkipping channel {}".format(chan))
         else:
             try:
@@ -445,8 +444,7 @@ def input(channel):
     # This implements BOARD mode
     channel = channel_fix_and_validate(channel)
 
-    if channel not in _State.lines.keys() \
-            or (_State.lines[channel].direction() != _INPUT and _State.lines[channel].direction() != _OUTPUT):
+    if  getdirection(channel) not in [IN, OUT]:
         raise RuntimeError("You must setup() the GPIO channel first")
 
     return _State.lines[channel].get_value()
@@ -488,22 +486,21 @@ def setbias(channel, bias):
 
     current = getbias(channel)
     if bias != current:
-        flags = bias_flag(bias) | active_flag(getactive_state(channel))
+        flags = getflags(channel)
+        flags &= ~bias_flag(getbias(channel))
+        flags |= bias_flag(bias)
         _State.lines[channel].set_flags(flags)
 
 
 def getdirection(channel):
     """
     Get direction of an active channel
-    Returns HIGH or LOW if the channel is active and -1 otherwise
+    Returns OUT if the channel is in an output mode, IN if the channel is in an input mode,
+    and -1 otherwise
     """
 
     channel = channel_fix_and_validate(channel)
-
-    if channel not in _State.lines.keys():
-        return -1
-    else:
-        return _State.lines[channel].direction()
+    return _LINE_MODE_TO_DIR_CONST[line_get_mode(channel)]
 
 
 def setdirection(channel, direction):
@@ -520,13 +517,14 @@ def setdirection(channel, direction):
     if current != -1:
         if current == IN and direction == OUT:
             _State.lines[channel].set_direction_output()
+            #line_set_mode(channel, _line_mode_out)
         elif current == OUT and direction == IN:
             _State.lines[channel].set_direction_input()
 
 
 def getactive_state(channel):
     """
-    Get direction of an active channel
+    Get the active_state of an active channel
     Returns HIGH or LOW if the channel is active and -1 otherwise
     """
 
@@ -552,8 +550,24 @@ def setactive_state(channel, active_state):
     # I may post a patch
     current = getactive_state(channel)
     if active_state != current:
-        flags = bias_flag(getbias(channel)) | active_flag(active_state)
+        flags = getflags(channel)
+        flags &= ~active_flag(getactive_state(channel))
+        flags |= active_flag(active_state)
         _State.lines[channel].set_flags(flags)
+
+
+# Since libgoiod does not expose a get_flags option, we roll our own here
+# by bitwise OR'ing all the flag getters that we use
+_LIBGPIOD_FLAG_GETTERS = [
+    getbias,
+    getactive_state,
+]
+
+def getflags(channel):
+    flags = 0
+    for getter in _LIBGPIOD_FLAG_GETTERS:
+        flags |= getter(channel)
+    return flags
 
 
 def wait_for_edge(channel, edge, bouncetime=None, timeout=0):
@@ -577,7 +591,7 @@ def wait_for_edge(channel, edge, bouncetime=None, timeout=0):
     # to release the channel's handle as a an input value, and acquire a new handle for an
     # event value.
 
-    if edge != RISING and edge != FALLING and edge != BOTH:
+    if edge not in [RISING, FALLING, BOTH]:
         raise ValueError("The edge must be set to RISING, FALLING or BOTH")
 
     if bouncetime is not None and bouncetime <= 0:
@@ -587,6 +601,7 @@ def wait_for_edge(channel, edge, bouncetime=None, timeout=0):
         raise ValueError("Timeout must be greater than or equal to 0")  # error semantics differ from RPi.GPIO
 
     line_set_mode(channel, edge)
+
     if channel not in _State.lines.keys() and _State.lines[channel].is_used():
         raise RuntimeError("Channel is currently in use (Device or Resource Busy)")
 
@@ -621,7 +636,7 @@ def poll_thread(channel, edge, callback, bouncetime):
     channel = channel_fix_and_validate(channel)
 
     while not _State.killsigs[channel].is_set():
-        print("wub")
+        #print("wub")
         if wait_for_edge(channel, edge, bouncetime, 10):
             for callback_func in _State.callbacks[channel]:
                 callback_func(channel)
