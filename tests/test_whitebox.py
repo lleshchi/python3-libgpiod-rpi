@@ -1,6 +1,7 @@
 import RPi.GPIO as GPIO
 import RPi.GPIO_DEVEL as GPIO_DEVEL
 import pytest
+import time
 import re
 
 def foo(pin):
@@ -290,11 +291,15 @@ def test_add_event_detect():
         GPIO.add_event_detect(16, GPIO.RISING, bouncetime=-1)
     assert "Bouncetime must be" in str(e.value)
 
+    GPIO_DEVEL.setdebuginfo(True)
+    print("AAAA")
     GPIO.add_event_detect(16, GPIO.FALLING, foo, 1)
-    GPIO.add_event_detect(17, GPIO.FALLING, bouncetime=1)
+    time.sleep(0.01)
+    print("BBB")
+    #GPIO.add_event_detect(17, GPIO.FALLING, bouncetime=1)
     GPIO_DEVEL.Reset()
 
-def test_add_event_detect_edge_conditions():
+def test_fdd_event_detect_edge_conditions():
     GPIO_DEVEL.Reset()
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(21, GPIO.IN, GPIO.PUD_OFF)
