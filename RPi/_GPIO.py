@@ -689,8 +689,6 @@ def setactive_state(channel, active_state):
     if active_state not in [HIGH, LOW]:
         raise ValueError("An active state was passed to setactive_state()")
 
-    # NOTE: it would be useful to be able to get the flags integer from libgpiod
-    # I may post a patch
     current = getactive_state(channel)
     if active_state != current:
         flags = line_get_flags(channel)
@@ -910,9 +908,7 @@ def cleanup():
 
     Dprint("cleanup {} lines".format(len(_State.lines)))
     for channel in range(len(_State.lines)):
-        Dprint("attempt set mode_none on channel {} (current mode: {})".format(channel, line_get_mode(channel)))
         line_set_mode(channel, _line_mode_none)
-        Dprint("channel {} now in mode {}".format(channel, line_get_mode(channel)))
 
     chip_destroy()
 
