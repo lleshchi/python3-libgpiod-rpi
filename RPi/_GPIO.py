@@ -360,7 +360,7 @@ def line_get_lock(channel):
     return _State
 
 def line_set_mode(channel, mode, flags=0):
-    DCprint(channel, "attempt", mode, "set (current value {})".format(line_get_mode(channel)))
+    DCprint(channel, "attempt", mode, "set_mode (current value {})".format(line_get_mode(channel)))
     if mode == line_get_mode(channel):
         DCprint(channel, " ==> NOOP set_mode")
         return
@@ -396,20 +396,22 @@ def line_get_bias(channel):
 
 # Since libgpiod does not expose a get_flags option, we roll our own here
 # by bitwise OR'ing all the flag getters that we use
-_LIBGPIOD_FLAG_GETTERS = [
-    line_get_bias,
-    line_get_active_state,
-]
+_LIBGPIOD_FLAG_GETTERS = {
+    line_get_bias: bias_flag,
+    line_get_active_state: active_flag,
+}
+
 
 def line_get_flags(channel):
     flags = 0
-    for getter in _LIBGPIOD_FLAG_GETTERS:
-        flags |= getter(channel)
+    for getter, to_flag in _LIBGPIOD_FLAG_GETTERS.items():
+        flags |= to_flag(getter(channel))
     return flags
 
-def line_set_flags(channel):
+def line_set_flags(channel, flags):
     begin_critical_section(channel, msg="set flags")
-    _State.lines[channel].set_flags(flags)
+    DCprint(channel, "set flags:", flags)
+    _State.lines[channel].line.set_flags(flags)
     end_critical_section(channel, msg="set flags")
 
 
@@ -437,6 +439,11 @@ def line_is_poll(channel):
 def line_kill_poll(channel):
     _State.lines[channel].thread.kill()
     _State.lines[channel].thread = None
+
+def line_kill_poll_lock(channel):
+    begin_critical_section(channel, msg="kill poll lock")
+    line_kill_poll(channel)
+    end_critical_section(channel, msg="kill poll lock")
 
 
 def line_set_value(channel, value):
@@ -573,7 +580,7 @@ def input(channel):
     channel = channel_fix_and_validate(channel)
 
     # this does't really make sense but it matches rpi gpio source code logic
-    if getdirection(channel) != [IN, OUT]:
+    if getdirection(channel) not in [IN, OUT]:
         raise RuntimeError("You must setup() the GPIO channel first")
 
     #if line_get_mode(channel) != _line_mode_input
@@ -617,7 +624,7 @@ def setbias(channel, bias):
 
     current = getbias(channel)
     if bias != current:
-        flags = getflags(channel)
+        flags = line_get_flags(channel)
         flags &= ~bias_flag(getbias(channel))
         flags |= bias_flag(bias)
         line_set_flags(channel, flags)
@@ -680,7 +687,7 @@ def setactive_state(channel, active_state):
     # I may post a patch
     current = getactive_state(channel)
     if active_state != current:
-        flags = getflags(channel)
+        flags = line_get_flags(channel)
         flags &= ~active_flag(getactive_state(channel))
         flags |= active_flag(active_state)
         line_set_flags(channel, flags)
@@ -863,7 +870,7 @@ def remove_event_detect(channel):
     channel = channel_fix_and_validate(channel)
 
     if line_is_poll(channel):
-        line_kill_poll(channel)
+        line_kill_poll_lock(channel)
     else:
         raise ValueError("event detection not setup on channel {}".format(channel))
 

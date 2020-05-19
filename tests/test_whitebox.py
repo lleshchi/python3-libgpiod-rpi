@@ -161,7 +161,7 @@ def test_setup():
     GPIO.setup([2,3,4], GPIO.OUT)
 
     # Ensure line objects for those pins were successfully created
-    assert all([pin in GPIO_DEVEL.State_Access().lines.keys() for pin in [2,3,4]])
+    assert all([GPIO_DEVEL.line_get_mode(pin) == GPIO_DEVEL._line_mode_out for pin in [2,3,4]])
 
 
 def test_output():
@@ -294,12 +294,12 @@ def test_add_event_detect():
     GPIO_DEVEL.setdebuginfo(True)
     print("AAAA")
     GPIO.add_event_detect(16, GPIO.FALLING, foo, 1)
-    time.sleep(0.01)
+    # time.sleep(0.01)
     print("BBB")
     #GPIO.add_event_detect(17, GPIO.FALLING, bouncetime=1)
     GPIO_DEVEL.Reset()
 
-def test_add_event_detect_edge_conditions():
+def test_xadd_event_detect_edge_conditions():
     GPIO_DEVEL.Reset()
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(21, GPIO.IN, GPIO.PUD_OFF)
