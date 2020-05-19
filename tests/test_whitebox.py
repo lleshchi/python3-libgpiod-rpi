@@ -292,18 +292,20 @@ def test_add_event_detect():
     assert "Bouncetime must be" in str(e.value)
 
     GPIO_DEVEL.setdebuginfo(True)
-    print("AAAA")
     GPIO.add_event_detect(16, GPIO.FALLING, foo, 1)
-    # time.sleep(0.01)
-    print("BBB")
-    #GPIO.add_event_detect(17, GPIO.FALLING, bouncetime=1)
+    time.sleep(0.01)
+    GPIO.add_event_detect(17, GPIO.FALLING, bouncetime=1)
+    time.sleep(0.1)
+    GPIO.remove_event_detect(17)
+    time.sleep(0.1)
+    GPIO.add_event_detect(17, GPIO.FALLING, bouncetime=1)
     GPIO_DEVEL.Reset()
 
-def test_xadd_event_detect_edge_conditions():
+def test_add_event_detect_edge_conditions():
     GPIO_DEVEL.Reset()
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(21, GPIO.IN, GPIO.PUD_OFF)
-    # GPIO.add_event_detect(21, GPIO.RISING, foo, 1)
+    GPIO.add_event_detect(21, GPIO.RISING, foo, 1)
 
     GPIO_DEVEL.Reset()
     GPIO.setmode(GPIO.BCM)

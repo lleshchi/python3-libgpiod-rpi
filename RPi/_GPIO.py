@@ -181,7 +181,7 @@ def end_critical_section(channel, msg="<no msg>"):
 
 def Dprint(*msgargs):
     """ Print debug information for development purposes"""
-    if _State.debuginfo or True:
+    if _State.debuginfo:
         print("[DEBUG]", *msgargs)
 
 
@@ -360,10 +360,6 @@ def chip_destroy():
 def line_get_unique_name(channel):
     chip_init_if_needed()
     return str(_State.chip.name()) + "-" + str(channel)
-
-
-def line_get_lock(channel):
-    return _State
 
 
 def line_set_mode(channel, mode, flags=0):
@@ -725,7 +721,6 @@ def wait_for_edge(channel, edge, bouncetime=None, timeout=0):
     {compat} bouncetime units are in seconds. this is subject to change
     """
 
-    # TODO this is an old note. delete?
     # Running this function before setup is allowed but the initial pin value is undefined
     # RPi.GPIO requires one to setup a pin as input before using it for event detection,
     # while libgpiod provides an interface that keeps the two mutually exclusive. We get around
