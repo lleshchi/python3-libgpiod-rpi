@@ -117,7 +117,7 @@ _LINE_MODE_TO_DIR_CONST = {
 class _PollThread(Thread):
     def __init__(self, channel, target, args):
         super().__init__(target=poll_thread, args=args)
-        self.daemon = True
+        #self.daemon = True
         self.killswitch = Event()
         self.target = target
         self.channel = channel
@@ -387,11 +387,11 @@ def line_is_active(channel):
 
 
 def line_get_active_state(channel):
-    return _State.lines[channel].active_state()
+    return _State.lines[channel].line.active_state()
 
 
 def line_get_bias(channel):
-    return _State.lines[channel].bias()
+    return _State.lines[channel].line.bias()
 
 
 # Since libgpiod does not expose a get_flags option, we roll our own here
@@ -661,7 +661,7 @@ def getactive_state(channel):
     channel = channel_fix_and_validate(channel)
 
     if line_is_active(channel):
-        return line_get_active_state()
+        return line_get_active_state(channel)
     else:
         return -1
 
@@ -784,7 +784,7 @@ def line_do_poll(channel, bouncetime, timeout):
             for fn in callbacks():
                 fn()
         end_critical_section(channel, msg="do poll")
-        #time.sleep(0.01)
+        time.sleep(0.01)
 
 def poll_thread(channel, edge, callback, bouncetime):
 
