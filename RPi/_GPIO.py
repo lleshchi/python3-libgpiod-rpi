@@ -3,7 +3,7 @@ from warnings import warn
 import os
 import sys
 import time
-from threading import Thread, Event, RLock
+from threading import Thread, Event, Lock
 
 #
 # | |_ ___   __| | ___
@@ -115,15 +115,18 @@ _LINE_MODE_TO_DIR_CONST = {
 # === Internal Data ===
 
 class _PollThread(Thread):
-    def __init__(self, target, args):
+    def __init__(self, channel, target, args):
         super().__init__(target=poll_thread, args=args)
         self.daemon = True
         self.killswitch = Event()
         self.target = target
+        self.channel = channel
 
     def kill(self):
         self.killswitch.set()
+        end_critical_section(self.channel, msg="drop lock and join poll thread")
         self.join()
+        begin_critical_section(self.channel, msg="poll thread dead so get lock")
 
 
 class _Line:
@@ -131,7 +134,7 @@ class _Line:
         self.channel    = channel
         self.line       = _State.chip.get_line(channel)
         self.mode       = _line_mode_none
-        self.lock       = RLock()
+        self.lock       = Lock()
         self.thread     = None
         self.callbacks  = []
         self.timestamp  = None
@@ -149,7 +152,7 @@ class _Line:
 
     def mode_request(self, mode, flags):
         ret = self.line.request(consumer=line_get_unique_name(self.channel), type=mode, flags=flags)
-        if ret is not None:
+        if ret is None:
             self.mode = mode
         return ret
 
@@ -165,17 +168,21 @@ class _State:
 # === Helper Routines ===
 
 def begin_critical_section(channel, msg="<no msg>"):
-    Dprint("begin critical section:", msg)
+    DCprint(channel, "attempt to acquire lock:", msg)
     _State.lines[channel].lock.acquire()
+    DCprint(channel,"begin critical section:", msg)
 
 def end_critical_section(channel, msg="<no msg>"):
-    Dprint("end critical section:", msg)
+    DCprint(channel,"end critical section:", msg)
     _State.lines[channel].lock.release()
 
 def Dprint(*msgargs):
     """ Print debug information for development purposes"""
     if _State.debuginfo or True:
         print("[DEBUG]", *msgargs)
+
+def DCprint(channel, *msgargs):
+    Dprint("[{}]".format(channel), *msgargs)
 
 
 # Mess with the internal state for development or recreational purposes
@@ -190,16 +197,19 @@ def Reset():
     Dprint("Reset begins")
 
     # Kill all running threads
+
     # Close chip object fd and release  any held lines
+
+    # bigg critical section
     cleanup()
 
     # Reset _State to default values
     _State.mode       = UNKNOWN         # TODO default mode ?
     _State.warnings   = True
     _State.debuginfo  = False
-    chip_init_if_needed()
     _State.event_ls   = []
 
+    chip_init_if_needed()
     _State.lines      = [_Line(channel) for channel in range(chip_get_num_lines())]
 
     Dprint("Reset commplete")
@@ -334,6 +344,14 @@ def chip_get_num_lines():
     chip_init_if_needed()
     return _State.chip.num_lines()
 
+
+def chip_destroy():
+    for line in _State.lines:
+        begin_critical_section(line.channel, msg="chip destroy begin")
+    chip_close_if_open()
+    for line in _State.lines:
+        end_critical_section(line.channel, msg="chip destory end")
+
 def line_get_unique_name(channel):
     chip_init_if_needed()
     return str(_State.chip.name()) + "-" + str(channel)
@@ -342,25 +360,22 @@ def line_get_lock(channel):
     return _State
 
 def line_set_mode(channel, mode, flags=0):
+    DCprint(channel, "attempt", mode, "set (current value {})".format(line_get_mode(channel)))
     if mode == line_get_mode(channel):
+        DCprint(channel, " ==> NOOP set_mode")
         return
-    
-    Dprint("attempt", mode, "set on channel", channel, "chip:", _State.chip)
 
     begin_critical_section(channel, msg="set line_mode")
     if line_get_mode(channel) != _line_mode_none or mode == _line_mode_none:
-
+        DCprint
         _State.lines[channel].cleanup()
 
-
     if mode != _line_mode_none:
-        
         ret = _State.lines[channel].mode_request(mode, flags)
-
-        Dprint("request() rv:", ret)
+        DCprint(channel, "ioctl/request({}, {}) rv:".format(mode, flags), ret)
 
     end_critical_section(channel, msg="set line_mode")
-    Dprint("channel", channel, " line mode set to", mode)
+    DCprint(channel, "line mode set to", mode)
 
 
 def line_get_mode(channel):
@@ -398,11 +413,11 @@ def line_set_flags(channel):
     end_critical_section(channel, msg="set flags")
 
 
-def line_do_poll(channel, edge, callback, bouncetime):
+def line_start_poll(channel, edge, callback, bouncetime):
     
-    begin_critical_section(channel, msg="do poll")
+    begin_critical_section(channel, msg="start poll")
     # Start a thread that polls for events on the pin and create a list of event callbacks
-    _State.lines[channel].thread = _PollThread(target=poll_thread, args=(channel, edge, callback, bouncetime))
+    _State.lines[channel].thread = _PollThread(channel, target=poll_thread, args=(channel, edge, callback, bouncetime))
 
     if callback:
         _State.lines[channel].callbacks.append(callback)
@@ -410,18 +425,18 @@ def line_do_poll(channel, edge, callback, bouncetime):
     # Start the edge detection thread
     _State.lines[channel].thread.start()
 
-    end_critical_section(channel, msg="do poll")
+    end_critical_section(channel, msg="start poll")
 
 
 def line_is_poll(channel):
+    DCprint(channel, "checking if channel is poll:", _State.lines[channel].thread is not None)
     return _State.lines[channel].thread is not None
 
 
+# Requires lock
 def line_kill_poll(channel):
-    begin_critical_section(channel, "kill poll")
     _State.lines[channel].thread.kill()
     _State.lines[channel].thread = None
-    end_critical_section(channel, "kill poll")
 
 
 def line_set_value(channel, value):
@@ -714,16 +729,22 @@ def wait_for_edge(channel, edge, bouncetime=None, timeout=0):
     except OSError:
         raise RuntimeError("Channel is currently in use (Device or Resource Busy)")
 
-    return line_event_wait(channel, bouncetime, timeout) 
+    return line_event_wait_lock(channel, bouncetime, timeout) 
+
+def line_event_wait_lock(channel, bouncetime, timeout):
+    begin_critical_section(channel, msg="event wait")
+    ret = line_event_wait(channel, bouncetime, timeout)
+    end_critical_section(channel, msg="event wait")
+    return ret
 
 
+# requires lock
 def line_event_wait(channel, bouncetime, timeout):
     # Split up timeout into appropriate parts
     timeout_sec     = int(int(timeout) / 1000)
     timeout_nsec    = (int(timeout) % 1000) * 1000
 
 
-    begin_critical_section(channel, msg="event wait")
     # We only care about bouncetime if it is explicitly speficied in the call to this function or if
     # this is not the first call to wait_for_edge on the specified pin
     if bouncetime and _State.lines[channel].timestamp and \
@@ -744,23 +765,26 @@ def line_event_wait(channel, bouncetime, timeout):
     else:
         ret = None
 
-    end_critical_section(channel, msg="line event wait")
-
     return ret
 
-def line_do_callbacks(channel):
-    begin_critical_section(channel, msg="do callbacks")
-    callbacks = _State.lines[channel].callbacks
-    end_critical_section(channel, msg="do callbacks")
-
-    for fn in callbacks():
-        fn()
 
 def line_poll_should_die(channel):
-    begin_critical_section(channel, msg="poll should die")
-    ret = _State.lines[channel].thread.killswitch.is_set()
-    end_critical_section(channel, msg="poll should die")
-    return ret
+    return _State.lines[channel].thread.killswitch.is_set()
+
+
+def line_do_poll(channel, bouncetime, timeout):
+
+    while True:
+        begin_critical_section(channel, msg="do poll")
+        if line_poll_should_die(channel):
+            end_critical_section(channel, msg="do poll exit")
+            break
+        if line_event_wait(channel, bouncetime, timeout):
+            callbacks = _State.lines[channel].callbacks
+            for fn in callbacks():
+                fn()
+        end_critical_section(channel, msg="do poll")
+        #time.sleep(0.01)
 
 def poll_thread(channel, edge, callback, bouncetime):
 
@@ -770,9 +794,9 @@ def poll_thread(channel, edge, callback, bouncetime):
     timeout = 10
     wait_for_edge_validation(edge, bouncetime, timeout)
 
-    while not line_poll_should_die(channel):
-        if line_event_wait(channel, bouncetime, timeout):
-            line_do_callbacks(channel)
+    DCprint(channel, "launch poll thread")
+    line_do_poll(channel, bouncetime, timeout)
+    DCprint(channel, "terminate poll thread")
 
 def add_event_detect(channel, edge, callback=None, bouncetime=None):
     """
@@ -800,7 +824,7 @@ def add_event_detect(channel, edge, callback=None, bouncetime=None):
         raise ValueError("Bouncetime must be greater than 0")
 
     line_set_mode(channel, edge)
-    line_do_poll(channel, edge, callback, bouncetime)
+    line_start_poll(channel, edge, callback, bouncetime)
 
 
 def add_event_callback(channel, callback):
@@ -870,10 +894,13 @@ def cleanup():
         as well as close any open file descriptors
     """
 
-    # We must copy the keylist because the dict will change size during iteration
+    Dprint("cleanup {} lines".format(len(_State.lines)))
     for channel in range(len(_State.lines)):
+        Dprint("attempt set mode_none on channel {} (current mode: {})".format(channel, line_get_mode(channel)))
         line_set_mode(channel, _line_mode_none)
-    chip_close_if_open()
+        Dprint("channel {} now in mode {}".format(channel, line_get_mode(channel)))
+
+    chip_destroy()
 
 
 def get_gpio_number(channel):

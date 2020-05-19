@@ -299,7 +299,7 @@ def test_add_event_detect():
     #GPIO.add_event_detect(17, GPIO.FALLING, bouncetime=1)
     GPIO_DEVEL.Reset()
 
-def test_fdd_event_detect_edge_conditions():
+def test_add_event_detect_edge_conditions():
     GPIO_DEVEL.Reset()
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(21, GPIO.IN, GPIO.PUD_OFF)
