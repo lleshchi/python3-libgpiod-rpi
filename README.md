@@ -36,13 +36,3 @@ of the library via `pip install -e .` in the repository root.
 The libgpiod python bindings must be installed and accessible from the development environment.
 This package is not available via `pip install` and must be installed using the system package
 manager.
-
-
-
-
-
-
-
-
-
-===
