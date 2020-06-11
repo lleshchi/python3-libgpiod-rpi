@@ -883,6 +883,16 @@ This functions returns a Boolean that represents the authority on whether a chan
         \item channel --- GPIO channel
 \end{enumerate}
 
+\noindent line\_\textbf{is\_pwm}(channel)
+
+Returns True if a \texttt{GPIO.PWM} object has been created on \texttt{channel}, otherwise returns False.
+
+\textit{parameters}:
+\begin{enumerate}      
+        \item channel --- GPIO channel
+        \item dutycycle --- percentage of pulse period to output high voltage
+\end{enumerate}
+
 \noindent line\_\textbf{kill\_poll}(channel)
 
 \noindent line\_\textbf{kill\_poll\_lock}(channel)
@@ -899,6 +909,45 @@ Stos poll thread running on \texttt{channel} by calling \texttt{\_PollThread.kil
 \noindent line\_\textbf{poll\_should\_die}(channel)
 
 Return the value \texttt{\_State.lines[channel].thread.killswitch.is\_set()}. Used by a poll thread when it considers suicide.
+
+\textit{parameters}:
+\begin{enumerate}      
+        \item channel --- GPIO channel
+\end{enumerate}
+
+\noindent line\_\textbf{pwm\_set\_dutycycle}(channel, dutycycle)
+
+% TODO
+
+\textit{parameters}:
+\begin{enumerate}      
+        \item channel --- GPIO channel
+        \item dutycycle --- percentage of pulse period to output high voltage
+\end{enumerate}
+
+\noindent line\_\textbf{pwm\_set\_frequency}(channel, frequency)
+
+% TODO
+
+\textit{parameters}:
+\begin{enumerate}      
+        \item channel --- GPIO channel
+        \item frequency --- pulse periodicity in hz
+\end{enumerate}
+
+\noindent line\_\textbf{pwm\_start}(channel, dutycycle)
+
+% TODO
+
+\textit{parameters}:
+\begin{enumerate}      
+        \item channel --- GPIO channel
+        \item dutycycle --- percentage of pulse period to output high voltage
+\end{enumerate}
+
+\noindent line\_\textbf{pwm\_stop}(channel)
+
+% TODO
 
 \textit{parameters}:
 \begin{enumerate}      

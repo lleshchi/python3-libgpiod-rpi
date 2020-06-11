@@ -127,7 +127,6 @@ class _PollThread(Thread):
         self.join()
         begin_critical_section(self.channel, msg="poll thread dead so get lock")
 
-
 class _Line:
     def __init__(self, channel):
         self.channel    = channel
@@ -433,6 +432,23 @@ def line_start_poll(channel, edge, callback, bouncetime):
 
     end_critical_section(channel, msg="start poll")
 
+def line_pwm_start(channel, dutycycle):
+    pass
+
+
+def line_pwm_stop(channel, dutycycle):
+    pass
+
+
+def line_pwm_set_dutycycle(channel, dutycycle):
+    pass
+
+
+def line_pwm_set_frequency(channel, frequency):
+    pass
+
+def line_is_pwm(channel):
+    pass
 
 def line_is_poll(channel):
     DCprint(channel, "checking if channel is poll:", _State.lines[channel].thread is not None)
@@ -931,6 +947,52 @@ def gpio_function(channel):
     # error handling is done in the called function
     return get_gpio_number(channel)
 
+
+class PWM:
+    def __init__(self, channel, frequency):
+        if line_is_pwm(channel):
+            raise RuntimeError("A PWM object already exists for this GPIO channel")
+
+        if frequency <= 0.0:
+            raise ValueError("frequency must be greater than 0.0")
+        self.channel = channel
+    
+    def start(dutycycle):
+        """
+        Start software PWM
+        dutycycle - the duty cycle (0.0 to 100.0)
+        """
+        if dutycycle < 0.0 or dutycycle > 100.0:
+            raise ValueError("dutycycle must have a value from 0.0 to 100.0")
+
+        line_pwm_start(self.channel, dutycycle)
+
+    def stop():
+        """
+        Stop software PWM
+        """
+        line_pwm_stop(self.channel) 
+
+    def ChangeDutyCycle(dutycycle):
+        """
+        Change the duty cycle
+        dutycycle - between 0.0 and 100.0
+        """
+        if dutycycle < 0.0 or dutycycle > 100.0:
+            raise ValueError("dutycycle must have a value from 0.0 to 100.0")
+
+        line_pwm_set_dutycycle(self.channel, dutycycle)
+
+    def ChangeFrequency(frequency):
+        """
+        Change the frequency
+        frequency - frequency in Hz (freq > 1.0)
+        """
+
+        if frequency <= 0.0:
+            raise ValueError("frequency must be greater than 0.0")
+
+        line_pwm_set_frequency(self.channel, frequency)
 
 # Initialize the library with a reset
 Reset()

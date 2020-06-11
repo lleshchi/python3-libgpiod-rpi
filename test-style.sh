@@ -21,7 +21,8 @@ scan() {
 }
 
 scan RPi/_GPIO.py
-scan tests/test_whitebox.py
+scan tests/test_gpio.py
+scan tests/test_pwm.py
 
 scan RPi/GPIO/__init__.py
 scan RPi/GPIO_DEVEL/__init__.py
