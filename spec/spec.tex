@@ -632,7 +632,7 @@ A list of the channels on which events have recently occurred. Will be invariant
 
 A list of \texttt{\_Line} objects corresponding to each GPIO channel. \texttt{\_Line} objects are internal to this library and contain corresponding \texttt{gpiod.Line} objects and associated data.
 
-\textit{Default value:} \texttt{[\_Line(channel) for channel in range(chip\_get\_num\_lines()))]}
+\textit{Default value:} \texttt{[\_Line(channel) for channel in range(chip\_get\_num\_lines())]}
 
 \subsection{Data Design: Class \_Line}
 
@@ -649,10 +649,24 @@ Initialize a new \_Line object. Invoked by \texttt{Reset}.
         \item channel --- GPIO channel
 \end{enumerate}
  
+\noindent \_Line.\textbf{thread\_start}(target\_type, args)
+
+[LOCK REQUIRED] Start a new thread on this channel to either poll for events or do pulse-width modulation.
+Returns True if a thread is sucessfully started and False otherwise.
+
+\textit{parameters}:
+\begin{enumerate}
+	\item target\_type --- one of either \texttt{\_line\_thread\_poll} or \texttt{\_line\_thread\_pwm} to specify thread type
+	\item args --- a tuple of arguments to pass to the entry point for the new thread
+\end{enumerate}
+
+\noindent \_Line.\textbf{thread\_stop}()
+
+[LOCK REQUIRED] Stop the thread running on this channel if one exists.
 
 \noindent \_Line.\textbf{cleanup}()
       
-Reset the internal state of the object to initial state. Kills the channel's poll thread if one is running. Clears the list of callbacks. Sets line mode to \texttt{\_line\_mode\_none}.
+[LOCK REQUIRED] Reset the internal state of the object to initial state. Kills the channel's poll thread if one is running. Clears the list of callbacks. Sets line mode to \texttt{\_line\_mode\_none}.
 
 \noindent \_Line.\textbf{mode\_request}(mode, flags)
 
@@ -690,7 +704,7 @@ A locking primitive of type \texttt{threading.Lock}. Used internally by the lock
 
 \noindent \_Line.\textbf{thread}
 
-An entry of type \texttt{\_PollThread} used to represent a poll thread that checks for edge events on a pin.
+An entry of type \texttt{\_LineThread} used to represent a poll thread that checks for edge events on a pin.
 
 \textit{Default value:} None
 
@@ -713,14 +727,14 @@ A subclass of \texttt{threading.Thread} with basic stopability.
 
 \medskip
 
-\noindent \_PollThread.\textbf{\_\_init\_\_}(channel, target, args)
+\noindent \_LineThread.\textbf{\_\_init\_\_}(channel, target\_type, args)
         
-Create a new instance of this class on \texttt{channel} that will call \texttt{target(*args)} when the poll thread is started via \texttt{line\_start\_poll}.
+Create a new instance of this class on \texttt{channel} that will call \texttt{target(*args)} when the line thread is started via \texttt{line\_start\_poll} or \texttt{line\_start\_pwm}
 
 \textit{parameters}:
 \begin{enumerate}
         \item channel --- GPIO channel
-        \item target --- the callable entry point to the poll thread
+	\item target\_type --- one of either \texttt{\_line\_thread\_poll} or \texttt{\_line\_thread\_pwm} to specify thread type
         \item args --- arguments that will be passed to target at invocation
 \end{enumerate}
  
@@ -906,18 +920,25 @@ Stos poll thread running on \texttt{channel} by calling \texttt{\_PollThread.kil
         \item channel --- GPIO channel
 \end{enumerate}
 
-\noindent line\_\textbf{poll\_should\_die}(channel)
+\noindent line\_\textbf{poll\_start}(channel, edge, callback, bouncetime)
 
-Return the value \texttt{\_State.lines[channel].thread.killswitch.is\_set()}. Used by a poll thread when it considers suicide.
+[LOCKS channel] Kick off a new poll thread from the main thread.
+Creates and starts new \_PollThread. Adds any specified callbacks to \texttt{\_State.lines[channel].callbacks}. 
 
 \textit{parameters}:
 \begin{enumerate}      
         \item channel --- GPIO channel
+        \item edge --- any one of RISING, FALLING, or BOTH to specify types of events poll for
+        \item callback --- A 0-ary callable object
+        \item bouncetime --- cooldown time in milliseconds for invoking the callback functions
 \end{enumerate}
 
 \noindent line\_\textbf{pwm\_set\_dutycycle}(channel, dutycycle)
 
-% TODO
+\noindent line\_\textbf{pwm\_set\_dutycycl\_lock}(channel, dutycycle)
+
+[first: LOCK REQUIRED, second: LOCKS channel]
+Set the dutycycle value for pulse-width modulation.
 
 \textit{parameters}:
 \begin{enumerate}      
@@ -927,7 +948,7 @@ Return the value \texttt{\_State.lines[channel].thread.killswitch.is\_set()}. Us
 
 \noindent line\_\textbf{pwm\_set\_frequency}(channel, frequency)
 
-% TODO
+[LOCKS channel] Set the pulse frequency value for pulse-width modulation.
 
 \textit{parameters}:
 \begin{enumerate}      
@@ -937,7 +958,8 @@ Return the value \texttt{\_State.lines[channel].thread.killswitch.is\_set()}. Us
 
 \noindent line\_\textbf{pwm\_start}(channel, dutycycle)
 
-% TODO
+[LOCKS channel] Start pulse-with modulation on \texttt{channel}.
+Returns true if successful and false otherwise.
 
 \textit{parameters}:
 \begin{enumerate}      
@@ -947,7 +969,7 @@ Return the value \texttt{\_State.lines[channel].thread.killswitch.is\_set()}. Us
 
 \noindent line\_\textbf{pwm\_stop}(channel)
 
-% TODO
+Stop a pulse-width modulation running on \texttt{channel} if it exists.
 
 \textit{parameters}:
 \begin{enumerate}      
@@ -986,21 +1008,17 @@ Calls \texttt{gpiod.Line.set\_value(value)} on \texttt{channel}.
         \item value --- new value for GPIO channel
 \end{enumerate}
 
-\noindent line\_\textbf{start\_poll}(channel, edge, callback, bouncetime)
+\noindent line\_\textbf{thread\_should\_die}(channel)
 
-[LOCKS channel] Kick off a new poll thread from the main thread.
-Creates and starts new \_PollThread. Adds any specified callbacks to \texttt{\_State.lines[channel].callbacks}. 
+Return the value \texttt{\_State.lines[channel].thread.killswitch.is\_set()}. Used by a line thread when it considers suicide.
 
 \textit{parameters}:
 \begin{enumerate}      
         \item channel --- GPIO channel
-        \item edge --- any one of RISING, FALLING, or BOTH to specify types of events poll for
-        \item callback --- A 0-ary callable object
-        \item bouncetime --- cooldown time in milliseconds for invoking the callback functions
 \end{enumerate}
 
 
-\subsection{Data Design: Line Modes} \label{linemodes}
+\subsection{Data Design: Line Modes and Line threads} \label{linemodes}
 
 The following constants are internal to the library and their external exposure is undefined. The reason for the distinction between ``Values'' and ``Events'' mode types is that the underlying \texttt{ioctl(2)} syscalls made by \texttt{libgpiod} actually request different access permissions for that GPIO channel depending on this choice.
 
@@ -1031,6 +1049,14 @@ Events mode for both rising and falling edge events. Detects all events.
 \noindent \textbf{\_line\_mode\_as\_is}
 
 Events as-is mode. As of yet undefined.
+
+\noindent \textbf{\_line\_thread\_poll}
+
+A thread type that will poll for events on a channel
+
+\noindent \textbf{\_line\_thread\_pwm}
+
+A thread type that will execute software pulse-width modulation on a channel
 
 \section{Requirements Summary for version 1.0}
 
