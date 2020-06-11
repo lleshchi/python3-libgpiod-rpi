@@ -116,19 +116,14 @@ _line_thread_none       = 0
 _line_thread_poll       = 1 << 1
 _line_thread_pwm        = 1 << 2
 
-# line thead type to callable entry point mapping
-_LINE_THREAD_TYPE_TO_TARGET = {
-        _line_thread_poll:  poll_thread,
-        _line_thread_pwm:   pwm_thread,
-}
-
 # === Internal Data ===
 
 class _LineThread(Thread):
     def __init__(self, channel, target_type, args):
-        super().__init__(target=_LINE_THREAD_TYPE_TO_TARGET[target_type], args=args)
+        target = _LINE_THREAD_TYPE_TO_TARGET[target_type]
+        super().__init__(target=target, args=args)
         self.killswitch = Event()
-        self.target = target
+        self.target_type = target_type
         self.channel = channel
 
     def kill(self):
@@ -150,11 +145,18 @@ class _Line:
         self.frequency  = -1
         self.timestamp  = None
 
-    def thread_start(self, target_type, args):
-        self.thread = _LineThread(self.channel, target_type, args)
+    def thread_start(self, thread_type, args):
+        self.thread = _LineThread(self.channel, thread_type, args)
+        if self.thread:
+            DCprint(self.channel, "start thread type {} ".format(thread_type))
+            self.thread.start()
+            self.thread_type = thread_type
+        else:
+            DCprint(self.channel, "FAILED to start thread on channel {}".format(self.channel))
+
         return self.thread is not None
 
-    def thread_stop(self, target_type, args):
+    def thread_stop(self):
         self.thread.kill()
         self.thread = None
         self.thread_type = _line_thread_none
@@ -183,7 +185,7 @@ class _Line:
 class _State:
     mode       = UNKNOWN
     warnings   = True
-    debuginfo  = False
+    debuginfo  = True # FIXME
     chip       = None
     event_ls   = []
     lines      = []
@@ -445,17 +447,16 @@ def line_set_flags(channel, flags):
 def line_poll_start(channel, edge, callback, bouncetime):
 
     begin_critical_section(channel, msg="start poll")
+
+    if callback:
+        _State.lines[channel].callbacks.append(callback)
     # Start a thread that polls for events on the pin and create a list of event callbacks
     # OLD way
     #_State.lines[channel].thread = _LineThread(channel, _line_thread_poll, args=(channel, edge, callback, bouncetime))
     _State.lines[channel].thread_start(_line_thread_poll, args=(channel, edge, callback, bouncetime))
 
-
-    if callback:
-        _State.lines[channel].callbacks.append(callback)
-
-    # Start the edge detection thread
-    _State.lines[channel].thread.start()
+    # Start the edge detection thread FIXME already started
+    #_State.lines[channel].thread_start()
 
     end_critical_section(channel, msg="start poll")
 
@@ -466,7 +467,7 @@ def line_pwm_start(channel, dutycycle):
     # and so we validate that we are in a state
     # where the user has called PWM.__init__()
     # but there is not yet a thread running
-    if not line_is_pwm(channel) and
+    if not line_is_pwm(channel) and \
             line_pwm_get_frequency(channel) != -1:
         begin_critical_section(channel, msg="pwm start")
         line_pwm_set_dutycycle(channel, dutycycle)
@@ -511,11 +512,11 @@ def line_pwm_get_dutycycle(channel):
     return _State.lines[channel].dutycycle
 
 def line_is_pwm(channel):
-    DCprint(channel, "checking if channel is pwm:", _State.lines[channel].thread == _line_thread_pwm)
+    DCprint(channel, "checking if channel is pwm:", _State.lines[channel].thread_type == _line_thread_pwm)
     return _State.lines[channel].thread_type == _line_thread_pwm
 
 def line_is_poll(channel):
-    DCprint(channel, "checking if channel is poll:", _State.lines[channel].thread == _line_thread_poll)
+    DCprint(channel, "checking if channel is poll:", _State.lines[channel].thread_type == _line_thread_poll)
     return _State.lines[channel].thread_type == _line_thread_poll
 
 
@@ -898,13 +899,13 @@ def pwm_thread(channel):
             break
         if _State.lines[channel].dutycycle > 0:
             line_set_value(channel, GPIO.HIGH)
-            time.sleep(_State.linesk
+            time.sleep(10000/_State.lines[channel].frequency * dutycycle) # 10/freq ms * (1 ms / 1000 us) * dutycycle
 
         if _State.lines[channel].dutycycle < 100:
             line_set_value(channel, GPIO.LOW)
-
-        # off 
-        # pause
+            time.sleep(10000/_State.lines[channel].frequency * (1.0 - dutycycle)) # 10/freq ms * (1 ms / 1000 us) * (dutycycle complement)
+        end_critical_section(channel, msg="do pwm")
+        time.sleep(0.01) # arbitrary time to sleep without lock, TODO: may interfere with overall timing of PwM
     
 
 def add_event_detect(channel, edge, callback=None, bouncetime=None):
@@ -1032,7 +1033,7 @@ def gpio_function(channel):
 
 class PWM:
     def __init__(self, channel, frequency):
-        channel = channel_fix_and_valdiate(channel)
+        channel = channel_fix_and_validate(channel)
 
         if line_is_pwm(channel):
             raise RuntimeError("A PWM object already exists for this GPIO channel")
@@ -1081,3 +1082,9 @@ class PWM:
 
 # Initialize the library with a reset
 Reset()
+
+# line thead type to callable entry point mapping
+_LINE_THREAD_TYPE_TO_TARGET = {
+        _line_thread_poll:  poll_thread,
+        _line_thread_pwm:   pwm_thread,
+}
