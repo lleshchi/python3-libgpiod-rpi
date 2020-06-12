@@ -6,7 +6,7 @@
 
 \title{
 {Functional and Technical Specification for python3-libgpiod-rpi 1.0} \\
-{Revision 1}
+{Revision 2}
 }
 
 
@@ -721,7 +721,7 @@ A timestamp (from \texttt{time.time()}) of the last edge event detected on that 
 \textit{Default value:} None
 
 
-\subsection{Data Design: Class \_PollThread}
+\subsection{Data Design: Class \_LineThread}
 
 A subclass of \texttt{threading.Thread} with basic stopability. 
 
@@ -739,9 +739,10 @@ Create a new instance of this class on \texttt{channel} that will call \texttt{t
 \end{enumerate}
  
 
-\noindent \_PollThread.\textbf{kill}()
+\noindent \_LineThread.\textbf{kill}()
 
-[LOCK REQUIRED] Stop a poll thread by setting the stop event and joining the thread until completion. The lock is dropped temporarily during the call to join() to allow the poll thread to finish its last iteration.
+[LOCK REQUIRED] Stop a \_LineThread's thread by setting the stop event and joining the thread until completion.
+The lock is dropped temporarily during the call to join() to allow the thread to finish its last iteration.
 
 \subsection{The  \texttt{channel\_} and \texttt{chip\_} interfaces}
 
