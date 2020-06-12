@@ -16,14 +16,14 @@ def test_is_all_ints():
     for i in valid_data:
         assert GPIO_DEVEL.is_all_ints(i) == True
 
-def test_is_all_bools():
+def test_is_all_bools_or_directions():
     GPIO_DEVEL.Reset()
     invalid_data = [foo, None, 5]
-    valid_data = [True, False]
+    valid_data = [True, False, GPIO.HIGH, GPIO.LOW]
     for i in invalid_data:
-        assert GPIO_DEVEL.is_all_bools(i) == False
+        assert GPIO_DEVEL.is_all_bools_or_directions(i) == False
     for i in valid_data:
-        assert GPIO_DEVEL.is_all_bools(i) == True
+        assert GPIO_DEVEL.is_all_bools_or_directions(i) == True
 
 def test_is_iterable():
     GPIO_DEVEL.Reset()
@@ -291,7 +291,6 @@ def test_add_event_detect():
         GPIO.add_event_detect(16, GPIO.RISING, bouncetime=-1)
     assert "Bouncetime must be" in str(e.value)
 
-    GPIO_DEVEL.setdebuginfo(True)
     GPIO.add_event_detect(16, GPIO.FALLING, foo, 1)
     time.sleep(0.01)
     GPIO.add_event_detect(17, GPIO.FALLING, bouncetime=1)

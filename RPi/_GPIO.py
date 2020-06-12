@@ -146,6 +146,7 @@ class _Line:
         self.timestamp  = None
 
     def thread_start(self, thread_type, args):
+        Dprint("ARGS TYPE:", args, type(args))
         self.thread = _LineThread(self.channel, thread_type, args)
         if self.thread:
             DCprint(self.channel, "start thread type {} ".format(thread_type))
@@ -185,7 +186,7 @@ class _Line:
 class _State:
     mode       = UNKNOWN
     warnings   = True
-    debuginfo  = True # FIXME
+    debuginfo  = False # FIXME
     chip       = None
     event_ls   = []
     lines      = []
@@ -250,13 +251,13 @@ def is_all_ints(data):
         else True
 
 
-def is_all_bools(data):
+def is_all_bools_or_directions(data):
     if not is_iterable(data):
         data = [data]
     if len(data) < 1:
         return False
-    return all([isinstance(elem, bool) for elem in data]) \
-        if not isinstance(data, bool)\
+    return all([(isinstance(elem, bool) or elem in [HIGH, LOW]) for elem in data]) \
+        if not (isinstance(data, bool) or data in [HIGH, LOW])\
         else True
 
 
@@ -471,7 +472,7 @@ def line_pwm_start(channel, dutycycle):
             line_pwm_get_frequency(channel) != -1:
         begin_critical_section(channel, msg="pwm start")
         line_pwm_set_dutycycle(channel, dutycycle)
-        _State.lines[channel].thread_start(_line_thread_pwm, args=(channel))
+        _State.lines[channel].thread_start(_line_thread_pwm, args=(channel,))
         end_critical_section(channel, msg="pwm start")
         return line_is_pwm(channel)
     # If the line is already running a PwM thread
@@ -486,7 +487,7 @@ def line_pwm_start(channel, dutycycle):
         return False
 
 
-def line_pwm_stop(channel, dutycycle):
+def line_pwm_stop(channel):
     if line_is_pwm(channel):
         begin_critical_section(channel, msg="pwm stop")
         _State.lines[channel].thread_stop()
@@ -508,8 +509,8 @@ def line_pwm_set_frequency(channel, frequency):
     _State.lines[channel].frequency = frequency
     end_critical_section(channel, msg="set frequency")
 
-def line_pwm_get_dutycycle(channel):
-    return _State.lines[channel].dutycycle
+def line_pwm_get_frequency(channel):
+    return _State.lines[channel].frequency
 
 def line_is_pwm(channel):
     DCprint(channel, "checking if channel is pwm:", _State.lines[channel].thread_type == _line_thread_pwm)
@@ -532,6 +533,7 @@ def line_kill_poll_lock(channel):
 
 
 def line_set_value(channel, value):
+    DCprint(channel, "Set value to", value)
     _State.lines[channel].line.set_value(value)
 
 
@@ -637,11 +639,18 @@ def output(channel, value):
     for chan in channel:
         chan = channel_fix_and_validate(chan)
 
-    if (not is_all_ints(value)) and (not is_all_bools(value)):
+    if (not is_all_ints(value)) and (not is_all_bools_or_directions(value)):
         raise ValueError("Value must be an integer/boolean or a list/tuple of integers/booleans")
 
     if not is_iterable(value):
         value = [value]
+
+    # Normalize the value argument
+    for i in range(len(value)):
+        if value[i] == HIGH:
+            value[i] = True
+        if value[i] == LOW:
+            value[i] = False
 
     if len(channel) != len(value):
         raise RuntimeError("Number of channel != number of value")
@@ -891,19 +900,22 @@ def poll_thread(channel, edge, callback, bouncetime):
 # Default to 1 kHz frequency 0.0% dutycycle
 # but interface functions require explicit arguments
 def pwm_thread(channel):
-
+    DCprint(channel, "begin PwM thread with dutycycle {}% and frequency {} Hz".format(_State.lines[channel].dutycycle, _State.lines[channel].frequency))
     while True:
         begin_critical_section(channel, msg="do pwm")
         if line_thread_should_die(channel):
             end_critical_section(channel, msg="do pwm exit")
             break
         if _State.lines[channel].dutycycle > 0:
-            line_set_value(channel, GPIO.HIGH)
-            time.sleep(10000/_State.lines[channel].frequency * dutycycle) # 10/freq ms * (1 ms / 1000 us) * dutycycle
-
+            line_set_value(channel, True)
+            DCprint(channel, "PwM: ON")
+            # 10/freq ms * (1000 ms / 1 s) * (dutycycle/100) <- that's a percentage
+            time.sleep(1/_State.lines[channel].frequency * (_State.lines[channel].dutycycle/100.0))
         if _State.lines[channel].dutycycle < 100:
-            line_set_value(channel, GPIO.LOW)
-            time.sleep(10000/_State.lines[channel].frequency * (1.0 - dutycycle)) # 10/freq ms * (1 ms / 1000 us) * (dutycycle complement)
+            line_set_value(channel, False)
+            DCprint(channel, "PwM: OFF")
+            # 10/freq ms * (1 ms / 1000 us) * ((dutycycle complement)/100)
+            time.sleep(1/_State.lines[channel].frequency * (1.0 - _State.lines[channel].dutycycle/100.0))
         end_critical_section(channel, msg="do pwm")
         time.sleep(0.01) # arbitrary time to sleep without lock, TODO: may interfere with overall timing of PwM
     
@@ -1035,7 +1047,11 @@ class PWM:
     def __init__(self, channel, frequency):
         channel = channel_fix_and_validate(channel)
 
-        if line_is_pwm(channel):
+        if line_get_mode(channel) != _line_mode_out:
+            raise RuntimeError("You must setup() the GPIO channel as an output first")
+
+        # If frequency is not -1 then we have called init() but not yet called start() so raise exception
+        if line_is_pwm(channel) or line_pwm_get_frequency(channel) != -1:
             raise RuntimeError("A PWM object already exists for this GPIO channel")
 
         if frequency <= 0.0:
@@ -1043,7 +1059,7 @@ class PWM:
         self.channel = channel
         line_pwm_set_frequency(channel, frequency)
     
-    def start(dutycycle):
+    def start(self, dutycycle):
         """
         Start software PWM
         dutycycle - the duty cycle (0.0 to 100.0)
@@ -1053,13 +1069,13 @@ class PWM:
 
         line_pwm_start(self.channel, dutycycle)
 
-    def stop():
+    def stop(self):
         """
         Stop software PWM
         """
         line_pwm_stop(self.channel) 
 
-    def ChangeDutyCycle(dutycycle):
+    def ChangeDutyCycle(self, dutycycle):
         """
         Change the duty cycle
         dutycycle - between 0.0 and 100.0
@@ -1069,7 +1085,7 @@ class PWM:
 
         line_pwm_set_dutycycle_lock(self.channel, dutycycle)
 
-    def ChangeFrequency(frequency):
+    def ChangeFrequency(self, frequency):
         """
         Change the frequency
         frequency - frequency in Hz (freq > 1.0)
