@@ -1,20 +1,14 @@
+#
+# Core implementation of python3-libgpiod-rpi
+# By Joel Savitz and Fabrizio D'Angelo
+# This is free software, see LICENSE for details
+#
 import gpiod
 from warnings import warn
 import os
 import sys
 import time
 from threading import Thread, Event, Lock
-
-#
-# | |_ ___   __| | ___
-# | __/ _ \ / _` |/ _ \
-# | || (_) | (_| | (_) |
-#  \__\___/ \__,_|\___/
-
-# TODO Docstrings not appearing properly when using help(GPIO)
-
-# TODO Some weirdness with the timing of callbacks (might be due to testing hardware)
-
 
 # BCM to Board mode conversion table
 pin_to_gpio_rev3 = [
@@ -861,7 +855,7 @@ def line_event_wait(channel, bouncetime, timeout):
     elif _State.lines[channel].line.event_wait(sec=timeout_sec, nsec=timeout_nsec):
         _State.lines[channel].timestamp = time.time()
         if channel not in _State.event_ls:
-            # Ensure no double appends
+            # Ensure no double appends. FIXME: should this be done outside of a poll thread?
             _State.event_ls.append(channel)
         event = _State.lines[channel].line.event_read()
 
@@ -880,6 +874,7 @@ def line_thread_should_die(channel):
     return _State.lines[channel].thread.killswitch.is_set()
 
 
+TEN_MILLISECONDS_IN_SECONDS = 0.0010
 def line_do_poll(channel, bouncetime, timeout):
 
     while True:
@@ -892,7 +887,7 @@ def line_do_poll(channel, bouncetime, timeout):
             for fn in callbacks():
                 fn()
         end_critical_section(channel, msg="do poll")
-        time.sleep(0.01)
+        time.sleep(TEN_MILLISECONDS_IN_SECONDS)
 
 
 def poll_thread(channel, edge, callback, bouncetime):
@@ -928,7 +923,8 @@ def pwm_thread(channel):
             # PwM calculation for low voltage part of period:
             time.sleep(1 / _State.lines[channel].frequency * (1.0 - _State.lines[channel].dutycycle / 100.0))
         end_critical_section(channel, msg="do pwm")
-        time.sleep(0.01)  # arbitrary time to sleep without lock, TODO: may interfere with overall timing of PwM
+        time.sleep(TEN_MILLISECONDS_IN_SECONDS)
+        # arbitrary time to sleep without lock, TODO: may interfere with overall timing of PwM but it's rough anyway
 
 
 def add_event_detect(channel, edge, callback=None, bouncetime=None):
