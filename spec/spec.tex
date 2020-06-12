@@ -123,7 +123,7 @@ At a high level, our list of functional requirements for 1.0 is relatively short
 
 In this section, we define the behavior of our API by careful inspection and interpretation of the \texttt{RPi.GPIO} source code \cite{rpigpio}.
 First, we define the core API functions that are accessible via the \texttt{RPi.GPIO} module.
-Then, we describe the Object Oriented Pulse-width Modulation interface accessible via the \texttt{RPi.PWM} module. Finally, we describe some static data fields and debug functions.
+Then, we describe the Object Oriented Pulse-width Modulation interface accessible via the \texttt{RPi.GPIO.PWM} class. Finally, we describe some static data fields and debug functions.
 
 \subsection{Core \texttt{RPi.GPIO} API} \label{coreapi}
  
@@ -372,19 +372,19 @@ Then, the 0-ary callable objects stored in the list \texttt{\_State.lines[channe
     % Also, should this spec include OSError exceptions we introduce?
 \end{itemize}
 
-\subsection{Class RPi.PWM}
+\subsection{Class \texttt{RPi.GPIO.PWM}} \label{pwm}
     
-RPi.PWM is a Pulse-width Modulation (PwM) class. Object methods follow.
+\texttt{RPi.GPIO.PWM} is a Pulse-width Modulation (PwM) class. Object methods follow.
 
 \medskip \medskip
 
-\noindent RPi.PWM.\textbf{ChageDutyCycle}(dutycycle)
+\noindent \texttt{RPi.GPIO.PWM}.\textbf{ChageDutyCycle}(dutycycle)
         
 Change the duty cycle of the PwM channel to \texttt{dutycycle}
         
 \textit{parameters}:
 \begin{enumerate}      
-        \item dutycycle --- A value between 0.0 and 100.0
+        \item dutycycle --- percentage of pulse period to output high voltage
 \end{enumerate}
  
  
@@ -393,13 +393,13 @@ Change the duty cycle of the PwM channel to \texttt{dutycycle}
     \item ValueError --- Invalid duty cycle
 \end{itemize}
 
-\noindent RPi.PWM.\textbf{ChangeFrequency}(frequency)
+\noindent \texttt{RPi.GPIO.PWM}.\textbf{ChangeFrequency}(frequency)
         
 Change the frequency the PwM channel to \texttt{frequency}
         
 \textit{parameters}:
 \begin{enumerate}      
-        \item frequency --- A positive float value
+        \item frequency --- pulse periodicity in hz
 \end{enumerate}
  
  
@@ -408,9 +408,9 @@ Change the frequency the PwM channel to \texttt{frequency}
     \item ValueError --- Invalid frequency value
 \end{itemize}
 
-\noindent RPi.PWM.\textbf{\_\_init\_\_}(channel, frequency)
+\noindent \texttt{RPi.GPIO.PWM}.\textbf{\_\_init\_\_}(channel, frequency)
         
-Initialize a new PwM object. Commonly invoked via: \texttt{RPi.PWM(channel, frequency)}
+Initialize a new PwM object. Commonly invoked via: \texttt{RPi.GPIO.PWM(channel, frequency)}
 
 \textit{parameters}:
 \begin{enumerate}
@@ -427,7 +427,7 @@ Initialize a new PwM object. Commonly invoked via: \texttt{RPi.PWM(channel, freq
     % TODO
 \end{itemize}
 
-\noindent RPi.PWM.\textbf{start}(dutycycle)
+\noindent \texttt{RPi.GPIO.PWM}.\textbf{start}(dutycycle)
         
 Start software PwM on the channel specified in \texttt{\_\_init\_\_}.
 
@@ -442,7 +442,7 @@ Start software PwM on the channel specified in \texttt{\_\_init\_\_}.
     \item ValueError --- Invalid duty cycle
 \end{itemize}
 
-\noindent RPi.PWM.\textbf{stop}()
+\noindent \texttt{RPi.GPIO.PWM}.\textbf{stop}()
         
 Stop software PwM on the channel specified in \texttt{\_\_init\_\_}.
 
