@@ -4,11 +4,13 @@ import pytest
 import time
 import re
 
+
 def test_init():
     GPIO_DEVEL.Reset()
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(18, GPIO.OUT)
     foo = GPIO.PWM(18, 1)
+    assert foo is foo
 
     with pytest.raises(ValueError) as e:
         bar = GPIO.PWM(54, 1)
@@ -25,6 +27,7 @@ def test_init():
     with pytest.raises(ValueError) as e:
         GPIO.setup(19, GPIO.OUT)
         bar = GPIO.PWM(19, -1)
+        assert bar is bar
     assert "greater than 0.0" in str(e.value)
 
 
@@ -34,11 +37,12 @@ def test_start_stop():
     GPIO.setmode(GPIO.BCM)
 
     GPIO.setup(18, GPIO.OUT)
-    foo = GPIO.PWM(18, 1)
+    foo = GPIO.PWM(18, 100)
 
     foo.start(50)
-    time.sleep(1)
+    time.sleep(.2)
     foo.stop()
+
 
 def test_change_attributes():
 
@@ -47,10 +51,10 @@ def test_change_attributes():
     GPIO.setmode(GPIO.BCM)
 
     GPIO.setup(18, GPIO.OUT)
-    foo = GPIO.PWM(18, 1)
+    foo = GPIO.PWM(18, 100)
 
     foo.start(50)
-    time.sleep(1)
+    time.sleep(.2)
 
     foo.ChangeFrequency(100)
     foo.ChangeDutyCycle(100)
@@ -67,5 +71,5 @@ def test_change_attributes():
         foo.ChangeDutyCycle(666)
     assert "from 0.0 to 100.0" in str(e.value)
 
-    time.sleep(3)
+    time.sleep(.2)
     foo.stop()

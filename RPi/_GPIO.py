@@ -118,6 +118,7 @@ _line_thread_pwm        = 1 << 2
 
 # === Internal Data ===
 
+
 class _LineThread(Thread):
     def __init__(self, channel, target_type, args):
         target = _LINE_THREAD_TYPE_TO_TARGET[target_type]
@@ -132,18 +133,19 @@ class _LineThread(Thread):
         self.join()
         begin_critical_section(self.channel, msg="poll thread dead so get lock")
 
+
 class _Line:
     def __init__(self, channel):
-        self.channel    = channel
-        self.line       = _State.chip.get_line(channel)
-        self.mode       = _line_mode_none
-        self.lock       = Lock()
-        self.thread     = None
-        self.thread_type= _line_thread_none
-        self.callbacks  = []
-        self.dutycycle  = -1
-        self.frequency  = -1
-        self.timestamp  = None
+        self.channel        = channel
+        self.line           = _State.chip.get_line(channel)
+        self.mode           = _line_mode_none
+        self.lock           = Lock()
+        self.thread         = None
+        self.thread_type    = _line_thread_none
+        self.callbacks      = []
+        self.dutycycle      = -1
+        self.frequency      = -1
+        self.timestamp      = None
 
     def thread_start(self, thread_type, args):
         Dprint("ARGS TYPE:", args, type(args))
@@ -186,7 +188,7 @@ class _Line:
 class _State:
     mode       = UNKNOWN
     warnings   = True
-    debuginfo  = False # FIXME
+    debuginfo  = False
     chip       = None
     event_ls   = []
     lines      = []
@@ -493,28 +495,35 @@ def line_pwm_stop(channel):
         _State.lines[channel].thread_stop()
         end_critical_section(channel, msg="pwm stop")
 
+
 def line_pwm_set_dutycycle(channel, dutycycle):
     _State.lines[channel].dutycycle = dutycycle
+
 
 def line_pwm_set_dutycycle_lock(channel, dutycycle):
     begin_critical_section(channel, msg="set dutycycle")
     line_pwm_set_dutycycle(channel, dutycycle)
     end_critical_section(channel, msg="set dutycycle")
 
+
 def line_pwm_get_dutycycle(channel):
     return _State.lines[channel].dutycycle
+
 
 def line_pwm_set_frequency(channel, frequency):
     begin_critical_section(channel, msg="set frequency")
     _State.lines[channel].frequency = frequency
     end_critical_section(channel, msg="set frequency")
 
+
 def line_pwm_get_frequency(channel):
     return _State.lines[channel].frequency
+
 
 def line_is_pwm(channel):
     DCprint(channel, "checking if channel is pwm:", _State.lines[channel].thread_type == _line_thread_pwm)
     return _State.lines[channel].thread_type == _line_thread_pwm
+
 
 def line_is_poll(channel):
     DCprint(channel, "checking if channel is poll:", _State.lines[channel].thread_type == _line_thread_poll)
@@ -896,11 +905,13 @@ def poll_thread(channel, edge, callback, bouncetime):
     line_do_poll(channel, bouncetime, timeout)
     DCprint(channel, "terminate poll thread")
 
+
 # NOTE: RPi.GPIO specifies:
 # Default to 1 kHz frequency 0.0% dutycycle
 # but interface functions require explicit arguments
 def pwm_thread(channel):
-    DCprint(channel, "begin PwM thread with dutycycle {}% and frequency {} Hz".format(_State.lines[channel].dutycycle, _State.lines[channel].frequency))
+    DCprint(channel, "begin PwM thread with dutycycle {}% and frequency {} Hz".format(_State.lines[channel].dutycycle,
+                                                                                      _State.lines[channel].frequency))
     while True:
         begin_critical_section(channel, msg="do pwm")
         if line_thread_should_die(channel):
@@ -909,16 +920,16 @@ def pwm_thread(channel):
         if _State.lines[channel].dutycycle > 0:
             line_set_value(channel, True)
             DCprint(channel, "PwM: ON")
-            # 10/freq ms * (1000 ms / 1 s) * (dutycycle/100) <- that's a percentage
-            time.sleep(1/_State.lines[channel].frequency * (_State.lines[channel].dutycycle/100.0))
+            # PwM calculation for high voltage part of period:
+            time.sleep(1 / _State.lines[channel].frequency * (_State.lines[channel].dutycycle / 100.0))
         if _State.lines[channel].dutycycle < 100:
             line_set_value(channel, False)
             DCprint(channel, "PwM: OFF")
-            # 10/freq ms * (1 ms / 1000 us) * ((dutycycle complement)/100)
-            time.sleep(1/_State.lines[channel].frequency * (1.0 - _State.lines[channel].dutycycle/100.0))
+            # PwM calculation for low voltage part of period:
+            time.sleep(1 / _State.lines[channel].frequency * (1.0 - _State.lines[channel].dutycycle / 100.0))
         end_critical_section(channel, msg="do pwm")
-        time.sleep(0.01) # arbitrary time to sleep without lock, TODO: may interfere with overall timing of PwM
-    
+        time.sleep(0.01)  # arbitrary time to sleep without lock, TODO: may interfere with overall timing of PwM
+
 
 def add_event_detect(channel, edge, callback=None, bouncetime=None):
     """
@@ -1058,7 +1069,7 @@ class PWM:
             raise ValueError("frequency must be greater than 0.0")
         self.channel = channel
         line_pwm_set_frequency(channel, frequency)
-    
+
     def start(self, dutycycle):
         """
         Start software PWM
@@ -1073,7 +1084,7 @@ class PWM:
         """
         Stop software PWM
         """
-        line_pwm_stop(self.channel) 
+        line_pwm_stop(self.channel)
 
     def ChangeDutyCycle(self, dutycycle):
         """
@@ -1096,11 +1107,12 @@ class PWM:
 
         line_pwm_set_frequency(self.channel, frequency)
 
+
 # Initialize the library with a reset
 Reset()
 
 # line thead type to callable entry point mapping
 _LINE_THREAD_TYPE_TO_TARGET = {
-        _line_thread_poll:  poll_thread,
-        _line_thread_pwm:   pwm_thread,
+    _line_thread_poll:  poll_thread,
+    _line_thread_pwm:   pwm_thread,
 }
