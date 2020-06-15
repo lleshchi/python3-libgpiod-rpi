@@ -39,7 +39,18 @@ def test_start_stop():
     GPIO.setup(18, GPIO.OUT)
     foo = GPIO.PWM(18, 100)
 
-    foo.start(50)
+    with pytest.raises(ValueError) as e:
+        foo.start(-1)
+    assert "dutycycle must have a value from 0.0 to 100.0" in str(e.value)
+
+    with pytest.raises(ValueError) as e:
+        foo.start(101)
+    assert "dutycycle must have a value from 0.0 to 100.0" in str(e.value)
+
+    assert foo.start(50)
+
+    assert not foo.start(51)
+
     time.sleep(.2)
     foo.stop()
 
